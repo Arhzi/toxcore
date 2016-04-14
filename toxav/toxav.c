@@ -45,7 +45,7 @@ typedef struct ToxAVCall_s {
     pthread_mutex_t mutex_video[1];
     PAIR(RTPSession *, VCSession *) video;
 
-    BWControler *bwc;
+    BWController *bwc;
 
     bool active;
     MSICall *msi_call;
@@ -87,7 +87,7 @@ struct ToxAV {
     uint32_t interval; /** Calculated interval */
 };
 
-void callback_bwc (BWControler *bwc, uint32_t friend_number, float loss, void *user_data);
+void callback_bwc (BWController *bwc, uint32_t friend_number, float loss, void *user_data);
 
 int callback_invite(void *toxav_inst, MSICall *call);
 int callback_start(void *toxav_inst, MSICall *call);
@@ -106,24 +106,28 @@ void call_kill_transmission(ToxAVCall *call);
 
 uint32_t toxav_version_major(void)
 {
-    return 0;
+    return TOXAV_VERSION_MAJOR;
 }
+
 uint32_t toxav_version_minor(void)
 {
-    return 0;
+    return TOXAV_VERSION_MINOR;
 }
+
 uint32_t toxav_version_patch(void)
 {
-    return 0;
+    return TOXAV_VERSION_PATCH;
 }
+
 bool toxav_version_is_compatible(uint32_t major, uint32_t minor, uint32_t patch)
 {
-    (void)major;
-    (void)minor;
-    (void)patch;
-
-    return 1;
+  return (TOXAV_VERSION_MAJOR == major && /* Force the major version */
+            (TOXAV_VERSION_MINOR > minor || /* Current minor version must be newer than requested  -- or -- */
+                (TOXAV_VERSION_MINOR == minor && TOXAV_VERSION_PATCH >= patch) /* the patch must be the same or newer */
+            )
+         );
 }
+
 ToxAV *toxav_new(Tox *tox, TOXAV_ERR_NEW *error)
 {
     TOXAV_ERR_NEW rc = TOXAV_ERR_NEW_OK;
@@ -286,12 +290,10 @@ bool toxav_call(ToxAV *av, uint32_t friend_number, uint32_t audio_bit_rate, uint
         goto END;
     }
 
-    ToxAVCall *call = call_new(av, friend_number, error);
+    ToxAVCall *call = call_new(av, friend_number, &rc);
 
-    if (call == NULL) {
-        rc = TOXAV_ERR_CALL_MALLOC;
+    if (call == NULL)
         goto END;
-    }
 
     call->audio_bit_rate = audio_bit_rate;
     call->video_bit_rate = video_bit_rate;
@@ -513,7 +515,7 @@ bool toxav_call_control(ToxAV *av, uint32_t friend_number, TOXAV_CALL_CONTROL co
                     goto END;
                 }
 
-                rtp_allow_receiving(call->audio.first);
+                rtp_allow_receiving(call->video.first);
             } else {
                 rc = TOXAV_ERR_CALL_CONTROL_INVALID_TRANSITION;
                 goto END;
@@ -857,7 +859,7 @@ void toxav_callback_video_receive_frame(ToxAV *av, toxav_video_receive_frame_cb 
  * :: Internal
  *
  ******************************************************************************/
-void callback_bwc(BWControler *bwc, uint32_t friend_number, float loss, void *user_data)
+void callback_bwc(BWController *bwc, uint32_t friend_number, float loss, void *user_data)
 {
     /* Callback which is called when the internal measure mechanism reported packet loss.
      * We report suggested lowered bitrate to an app. If app is sending both audio and video,
